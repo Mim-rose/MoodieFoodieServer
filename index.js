@@ -584,21 +584,31 @@ app.put('/admin/inventory/:id', verifyJWT, async (req, res) => {
   }
 });
 
-// Stripe payment
+// Stripe payment (safe for both local and production)
 app.post('/create-payment-intent', async (req, res) => {
   const { amount } = req.body;
 
+  // If STRIPE_SECRET_KEY is missing (like on Render), disable payment route
+  if (!process.env.STRIPE_SECRET_KEY) {
+    console.warn("⚠️ Stripe key missing — payments disabled.");
+    return res.status(403).json({
+      error: "Stripe is not configured in this environment."
+    });
+  }
+
   try {
+    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+
     const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(amount * 100), // Stripe expects amount in cents
+      amount: Math.round(amount * 100), // convert to cents
       currency: 'usd',
       automatic_payment_methods: { enabled: true }
     });
 
-    res.send({ clientSecret: paymentIntent.client_secret });
+    res.json({ clientSecret: paymentIntent.client_secret });
   } catch (err) {
-    console.error("Stripe error:", err);
-    res.status(500).send({ error: "Payment initiation failed." });
+    console.error("❌ Stripe payment error:", err);
+    res.status(500).json({ error: "Payment initiation failed." });
   }
 });
 
